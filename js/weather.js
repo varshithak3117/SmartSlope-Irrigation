@@ -1,225 +1,602 @@
-/**
- * SmartSlope Weather Integration Engine
- * Interfaces with Open-Meteo API for real-time agricultural forecasts in the Karnataka Arecanut Belt
- */
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartFarm – Smart Irrigation for Sloping Arecanut Plantations</title>
 
-class SmartSlopeWeather {
-  constructor() {
-    this.cache = {};
-    this.cacheTtlMs = 15 * 60 * 1000; // 15 mins cache
-  }
+  <!-- Google Fonts for Kannada, Hindi, and Latin -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-  /**
-   * Fetch weather forecast for a land based on coordinates
-   * @param {number} lat - Latitude
-   * @param {number} lon - Longitude
-   * @param {string} landName - Land identifier
-   */
-  async getForecast(lat = 13.4216, lon = 75.2562, landName = "Arecanut Estate") {
-    const cacheKey = `${lat.toFixed(3)}_${lon.toFixed(3)}`;
-    const now = Date.now();
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    if (this.cache[cacheKey] && (now - this.cache[cacheKey].timestamp < this.cacheTtlMs)) {
-      return this.cache[cacheKey].data;
-    }
-
-    try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&timezone=auto&forecast_days=3`;
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-
-      const response = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Open-Meteo HTTP error: ${response.status}`);
-      }
-
-      const raw = await response.json();
-      const processed = this.formatWeatherData(raw, lat, lon, landName);
-
-      this.cache[cacheKey] = {
-        timestamp: now,
-        data: processed
-      };
-
-      return processed;
-    } catch (err) {
-      console.warn("Open-Meteo network request failed, switching to safe local agro-climatic fallback:", err.message);
-      return this.getFallbackWeather(lat, lon, landName, err.message);
-    }
-  }
-
-  /**
-   * Format Open-Meteo JSON into farmer-friendly metrics & recommendations
-   */
-  formatWeatherData(raw, lat, lon, landName) {
-    const current = raw.current || {};
-    const daily = raw.daily || {};
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+  <div class="app-container">
     
-    const temp = Math.round(current.temperature_2m ?? 27);
-    const humidity = Math.round(current.relative_humidity_2m ?? 78);
-    const windSpeed = Math.round(current.wind_speed_10m ?? 8);
-    const precipNow = current.precipitation ?? 0;
-    const weatherCode = current.weather_code ?? 0;
+    <!-- Sidebar Navigation -->
+    <aside class="app-sidebar">
+      <div class="sidebar-header">
+        <a href="#" class="brand-logo" data-navigate="page-home">
+          <div class="brand-text">
+            <span>SmartFarm</span>
+          </div>
+        </a>
+      </div>
 
-    // Daily metrics
-    const todayRainProb = daily.precipitation_probability_max?.[0] ?? 25;
-    const todayRainSum = daily.precipitation_sum?.[0] ?? 0;
-    const tomorrowRainProb = daily.precipitation_probability_max?.[1] ?? 35;
-    const tomorrowRainSum = daily.precipitation_sum?.[1] ?? 4.2;
+      <nav class="sidebar-nav">
+        <div class="nav-section-title" data-i18n="navHome">Main Navigation</div>
+        <a class="nav-item active" data-navigate="page-home">
+          <span class="nav-icon"></span>
+          <span data-i18n="navHome">Home Dashboard</span>
+        </a>
+        <a class="nav-item" data-navigate="page-lands">
+          <span class="nav-icon"></span>
+          <span data-i18n="navLands">My Lands</span>
+        </a>
+        <a class="nav-item" data-navigate="page-land-detail">
+          <span class="nav-icon"></span>
+          <span data-i18n="navLandDetail">Land Dashboard</span>
+        </a>
 
-    const weatherCondition = this.getWmoDescription(weatherCode);
+        <div class="nav-section-title" data-i18n="navZones">Slope Monitoring</div>
+        <a class="nav-item" data-navigate="page-zones">
+          <span class="nav-icon"></span>
+          <span data-i18n="navZones">3-Zone Monitoring</span>
+        </a>
+        <a class="nav-item" data-navigate="page-irrigation">
+          <span class="nav-icon"></span>
+          <span data-i18n="navIrrigation">Irrigation Control</span>
+        </a>
+        <a class="nav-item" data-navigate="page-weather">
+          <span class="nav-icon"></span>
+          <span data-i18n="navWeather">Weather & Rain</span>
+        </a>
 
-    // Weather-based smart irrigation advisory
-    const advisory = this.generateIrrigationAdvisory(todayRainProb, todayRainSum, tomorrowRainProb, tomorrowRainSum);
+        <div class="nav-section-title" data-i18n="navAnalytics">Intelligence & Safety</div>
+        <a class="nav-item" data-navigate="page-analytics">
+          <span class="nav-icon"></span>
+          <span data-i18n="navAnalytics">Analytics & Usage</span>
+        </a>
+        <a class="nav-item" data-navigate="page-recommendations">
+          <span class="nav-icon"></span>
+          <span data-i18n="navRecommendations">Recommendations</span>
+        </a>
+        <a class="nav-item" data-navigate="page-alerts">
+          <span class="nav-icon"></span>
+          <span data-i18n="navAlerts">Alerts & Safety</span>
+          <span id="activeAlertsCountBadge" class="badge badge-danger ml-auto" style="display:none; margin-left:auto;">0</span>
+        </a>
+        <a class="nav-item" data-navigate="page-settings">
+          <span class="nav-icon"></span>
+          <span data-i18n="navSettings">Settings</span>
+        </a>
+      </nav>
 
-    // 3-day simple outlook
-    const dailyOutlook = [];
-    if (daily.time) {
-      for (let i = 0; i < Math.min(3, daily.time.length); i++) {
-        const date = new Date(daily.time[i]);
-        const dayName = i === 0 ? "Today" : i === 1 ? "Tomorrow" : date.toLocaleDateString('en-US', { weekday: 'short' });
-        dailyOutlook.push({
-          day: dayName,
-          date: daily.time[i],
-          maxTemp: Math.round(daily.temperature_2m_max[i]),
-          minTemp: Math.round(daily.temperature_2m_min[i]),
-          rainProb: daily.precipitation_probability_max[i],
-          rainSum: daily.precipitation_sum[i],
-          icon: this.getWeatherIcon(daily.weather_code[i])
-        });
-      }
-    }
+      <div class="sidebar-footer">
+        <div>SmartFarm v1.0.0</div>
+        <div class="text-xs text-muted" data-i18n="systemStatus">System Status: Healthy</div>
+      </div>
+    </aside>
 
-    return {
-      status: "live",
-      source: "Open-Meteo Live API",
-      temperature: temp,
-      humidity: humidity,
-      windSpeed: windSpeed,
-      precipNow: precipNow,
-      rainProbability: todayRainProb,
-      expectedRainfallMm: todayRainSum,
-      tomorrowRainProb: tomorrowRainProb,
-      tomorrowRainMm: tomorrowRainSum,
-      condition: weatherCondition.text,
-      conditionKn: weatherCondition.textKn,
-      icon: weatherCondition.icon,
-      advisory: advisory,
-      dailyOutlook: dailyOutlook,
-      lastUpdated: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-  }
+    <!-- Main Content Wrapper -->
+    <main class="app-main">
+      
+      <!-- Top Header -->
+      <header class="app-header">
+        <div class="header-left">
+          <button id="mobileMenuBtn" class="mobile-menu-btn" title="Toggle Navigation">☰</button>
+          <span class="badge badge-warning" data-i18n="demoBadge">DEMO MODE (Simulated)</span>
+          <select id="activeLandSelect" class="form-select" style="max-width: 220px;" title="Select Active Land">
+            <!-- Populated dynamically -->
+          </select>
+        </div>
 
-  /**
-   * Safe agro-climatic fallback when offline or API unreachable
-   */
-  getFallbackWeather(lat, lon, landName, errorMsg) {
-    const isMonsoon = [5, 6, 7, 8].includes(new Date().getMonth());
-    const estRainProb = isMonsoon ? 65 : 20;
-    const estRainMm = isMonsoon ? 12.0 : 0.5;
+        <div class="header-right">
+          <!-- Voice Toggle -->
+          <div class="d-flex align-center gap-1" title="Voice Announcements in Kannada, Hindi, and English">
+            <label class="text-xs font-semibold" data-i18n="voiceAlertsToggle">Voice Alerts</label>
+            <input type="checkbox" id="voiceToggle" checked style="cursor:pointer;">
+          </div>
 
-    return {
-      status: "fallback",
-      source: "Local Agro-Climatic Model (Safe Fallback)",
-      errorNote: "Live weather service temporarily unavailable. Safe local moisture thresholds in effect.",
-      temperature: 28,
-      humidity: 76,
-      windSpeed: 7,
-      precipNow: 0,
-      rainProbability: estRainProb,
-      expectedRainfallMm: estRainMm,
-      tomorrowRainProb: estRainProb,
-      tomorrowRainMm: estRainMm,
-      condition: "Partly Cloudy",
-      conditionKn: "ಭಾಗಶಃ ಮೋಡ ಕವಿದ ವಾತಾವರಣ",
-      icon: "⛅",
-      advisory: {
-        recommendation: "Maintain local sensor-guided threshold irrigation.",
-        recommendationKn: "ಮಣ್ಣಿನ ತೇವಾಂಶ ಸಂವೇದಕಗಳ ಆಧಾರದ ಮೇಲೆ ನೀರಾವರಿ ಮುಂದುವರಿಸಿ.",
-        delayHours: 0,
-        action: "NORMAL_CONTROL",
-        reason: "Offline fallback active: local soil probes are controlling valves independently."
-      },
-      dailyOutlook: [
-        { day: "Today", maxTemp: 29, minTemp: 22, rainProb: estRainProb, rainSum: estRainMm, icon: "⛅" },
-        { day: "Tomorrow", maxTemp: 28, minTemp: 21, rainProb: estRainProb + 5, rainSum: estRainMm, icon: "🌦️" },
-        { day: "Day 3", maxTemp: 30, minTemp: 22, rainProb: estRainProb - 5, rainSum: 0, icon: "☀️" }
-      ],
-      lastUpdated: "Safe Fallback"
-    };
-  }
+          <label class="sr-only" for="voiceLanguageQuickSelect" data-i18n="voiceLanguage">Voice Language</label>
+          <select id="voiceLanguageQuickSelect" class="form-select" aria-label="Voice alert language" title="Voice alert language" style="max-width: 130px;">
+            <option value="en">English</option>
+            <option value="kn">ಕನ್ನಡ (Kannada)</option>
+            <option value="hi">हिंदी (Hindi)</option>
+          </select>
 
-  /**
-   * Generates intelligent slope irrigation delay suggestions based on rainfall volume & probability
-   */
-  generateIrrigationAdvisory(todayProb, todayMm, tomorrowProb, tomorrowMm) {
-    if (todayMm > 15 || todayProb > 75) {
-      return {
-        recommendation: "High rainfall expected today (>15mm). Delay irrigation by 24h to prevent topsoil slope erosion.",
-        recommendationKn: "ಇಂದು ಭಾರಿ ಮಳೆಯಾಗುವ ಸಾಧ್ಯತೆ (>15ಮಿ.ಮೀ). ಇಳಿಜಾರಿನ ಮಣ್ಣು ಕೊಚ್ಚಿಹೋಗುವುದನ್ನು ತಡೆಯಲು ನೀರಾವರಿಯನ್ನು 24 ಗಂಟೆ ಮುಂದೂಡಿ.",
-        delayHours: 24,
-        action: "DELAY_IRRIGATION",
-        badge: "Rain Delay Recommended",
-        severity: "warning",
-        reason: "Heavy rainfall on sloping terrain causes severe surface runoff and nutrient leaching if soil is already saturated by irrigation."
-      };
-    } else if (tomorrowMm > 10 || tomorrowProb > 70) {
-      return {
-        recommendation: "Rain forecast tomorrow. Recommended: Delay Upper/Middle slope watering to conserve reservoir water.",
-        recommendationKn: "ನಾಳೆ ಮಳೆಯ ಮುನ್ಸೂಚನೆ ಇದೆ. ನೀರು ಉಳಿಸಲು ಮೇಲಿನ ಮತ್ತು ಮಧ್ಯದ ವಲಯಗಳ ನೀರಾವರಿಯನ್ನು ಮುಂದೂಡುವುದು ಸೂಕ್ತ.",
-        delayHours: 18,
-        action: "DELAY_IRRIGATION",
-        badge: "Rain Expected Tomorrow",
-        severity: "info",
-        reason: "Upcoming precipitation will recharge the root zone naturally; saving ~1,200 Liters."
-      };
-    } else if (todayProb < 20 && todayMm === 0) {
-      return {
-        recommendation: "Clear sunny weather with low rain probability. Standard slope threshold irrigation active.",
-        recommendationKn: "ಬಿಸಿಲಿನ ವಾತಾವರಣವಿದೆ. ಇಳಿಜಾರಿನ ಪ್ರಮಾಣಿತ ನೀರಾವರಿ ನಿಯಂತ್ರಣ ಜಾರಿಯಲ್ಲಿದೆ.",
-        delayHours: 0,
-        action: "PROCEED_AS_NEEDED",
-        badge: "Dry Weather Cycle",
-        severity: "normal",
-        reason: "Evapotranspiration is normal. Maintain Zone 1 upper-slope moisture to prevent tree wilt."
-      };
-    } else {
-      return {
-        recommendation: "Light showers possible. Monitor Zone 3 lower slope for runoff accumulation before watering.",
-        recommendationKn: "ಸಾಧಾರಣ ಮಳೆಯಾಗಬಹುದು. ನೀರುಣಿಸುವ ಮುನ್ನ ತಗ್ಗು ವಲಯ 3 ರಲ್ಲಿ ನೀರು ನಿಲ್ಲುವುದನ್ನು ಗಮನಿಸಿ.",
-        delayHours: 0,
-        action: "MONITOR",
-        badge: "Light Rain Warning",
-        severity: "info",
-        reason: "Light precipitation may partially wet upper slope while runoff pools in Zone 3."
-      };
-    }
-  }
+          <!-- Language Selector -->
+          <div class="d-flex align-center gap-1">
+            <select id="langSelect" class="form-select" style="max-width: 130px; font-weight:600;">
+              <option value="en">English</option>
+              <option value="kn">ಕನ್ನಡ (Kannada)</option>
+              <option value="hi">हिंदी (Hindi)</option>
+            </select>
+          </div>
 
-  getWmoDescription(code) {
-    const map = {
-      0: { text: "Clear Sky", textKn: "ಸ್ವಚ್ಛ ಆಕಾಶ", icon: "☀️" },
-      1: { text: "Mainly Clear", textKn: "ಹೆಚ್ಚಾಗಿ ಸ್ವಚ್ಛ", icon: "🌤️" },
-      2: { text: "Partly Cloudy", textKn: "ಭಾಗಶಃ ಮೋಡ", icon: "⛅" },
-      3: { text: "Overcast", textKn: "ಮೋಡ ಕವಿದ", icon: "☁️" },
-      45: { text: "Fog", textKn: "ದಟ್ಟ ಮಂಜು", icon: "🌫️" },
-      51: { text: "Light Drizzle", textKn: "ಹಗುರ ತುಂತುರು", icon: "🌦️" },
-      61: { text: "Slight Rain", textKn: "ಸಾಧಾರಣ ಮಳೆ", icon: "🌧️" },
-      63: { text: "Moderate Rain", textKn: "ಮಧ್ಯಮ ಮಳೆ", icon: "🌧️" },
-      65: { text: "Heavy Rain", textKn: "ಭಾರಿ ಮಳೆ", icon: "⛈️" },
-      80: { text: "Rain Showers", textKn: "ಮಳೆ ಸುರಿಮಳೆ", icon: "🌦️" },
-      95: { text: "Thunderstorm", textKn: "ಗುಡುಗು ಸಹಿತ ಮಳೆ", icon: "⚡" }
-    };
-    return map[code] || { text: "Partly Cloudy", textKn: "ಭಾಗಶಃ ಮೋಡ", icon: "⛅" };
-  }
+          <!-- Add Land Button -->
+          <button class="btn btn-primary btn-sm" onclick="App.openAddLandModal()" data-i18n="addLandBtn">
+            + Add New Land
+          </button>
+        </div>
+      </header>
 
-  getWeatherIcon(code) {
-    return this.getWmoDescription(code).icon;
-  }
-}
+      <!-- Dynamic Page Body -->
+      <div class="content-body">
+        <form id="siteSearchForm" class="site-search" role="search">
+          <label class="sr-only" for="siteSearchInput" data-i18n="searchPlaceholder">Search this page</label>
+          <input id="siteSearchInput" class="form-control" type="search" data-i18n="searchPlaceholder" placeholder="Search this page">
+          <button class="btn btn-primary" type="submit" data-i18n="searchButton">Search</button>
+          <button id="voiceSearchButton" class="btn btn-outline" type="button" aria-label="Search by voice" title="Search by voice">Voice</button>
+          <span id="searchStatus" class="search-status" role="status" aria-live="polite"></span>
+        </form>
+        <div id="siteSearchResults" class="search-results" aria-live="polite"></div>
+        
+        <!-- 1. HOME DASHBOARD VIEW -->
+        <section id="page-home" class="page-view active">
+          <div class="d-flex justify-between align-center flex-wrap mb-4">
+            <div>
+              <h1 class="h2 mb-1" data-i18n="welcomeFarmer">Welcome back, Farmer</h1>
+              <p class="text-muted" data-i18n="welcomeSubtitle">Monitor slopes, save water, and prevent runoff across your arecanut groves</p>
+            </div>
+            <div id="statOverallStatus">
+              <span class="badge badge-success">All Slopes Stable</span>
+            </div>
+          </div>
 
-// Global instance
-window.smartSlopeWeather = new SmartSlopeWeather();
+          <!-- Summary KPI Cards -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <span class="kpi-title" data-i18n="kpiTotalLands">Total Lands</span>
+              <span id="statTotalLands" class="kpi-value">3</span>
+              <span class="kpi-sub">Registered Plantations</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title" data-i18n="kpiTotalZones">Monitored Zones</span>
+              <span id="statTotalZones" class="kpi-value">9</span>
+              <span class="kpi-sub">3 Slope Elevations Each</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title" data-i18n="kpiNeedWater">Zones Needing Water</span>
+              <span id="statNeedWater" class="kpi-value text-warning">1</span>
+              <span class="kpi-sub">Moisture &lt; Threshold</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title" data-i18n="kpiIrrigating">Currently Irrigating</span>
+              <span id="statIrrigating" class="kpi-value text-primary">1</span>
+              <span class="kpi-sub">Valves Open</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title" data-i18n="kpiWaterToday">Water Used Today</span>
+              <span id="statWaterToday" class="kpi-value text-water">360 L</span>
+              <span class="kpi-sub">Zone-calibrated Litres</span>
+            </div>
+            <div class="kpi-card">
+              <span class="kpi-title" data-i18n="kpiActiveAlerts">Active Alerts</span>
+              <span id="statActiveAlerts" class="kpi-value text-danger">0</span>
+              <span class="kpi-sub">Requires Attention</span>
+            </div>
+          </div>
+
+          <!-- Weather Summary Widget -->
+          <div class="card p-4 mb-4">
+            <div class="d-flex justify-between align-center mb-3">
+              <h2 class="h4" data-i18n="weatherTitle">Weather & Rainfall Forecast (Open-Meteo)</h2>
+              <button class="btn btn-outline btn-sm" onclick="App.navigateTo('page-weather')">View Full Forecast →</button>
+            </div>
+            <div id="homeWeatherWidget">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Registered Lands Section -->
+          <div class="d-flex justify-between align-center mb-3">
+            <h2 class="h4" data-i18n="allLandsOverview">All Registered Lands</h2>
+            <button class="btn btn-outline btn-sm" onclick="App.navigateTo('page-lands')" data-i18n="navLands">Manage All Lands →</button>
+          </div>
+          <div id="homeLandCardsContainer" class="land-cards-grid mb-4">
+            <!-- Populated dynamically -->
+          </div>
+
+          <!-- Row: Recommendations & Recent Alerts -->
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <div class="card p-4 h-100">
+                <div class="d-flex justify-between align-center mb-3">
+                  <h3 class="h5" data-i18n="recomTitle">Smart Irrigation Recommendations</h3>
+                  <button class="btn btn-outline btn-sm" onclick="App.navigateTo('page-recommendations')">All →</button>
+                </div>
+                <div id="homeRecommendationsContainer">
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-6 mb-3">
+              <div class="card p-4 h-100">
+                <div class="d-flex justify-between align-center mb-3">
+                  <h3 class="h5" data-i18n="alertsTitle">Recent Alerts & Safety Events</h3>
+                  <button class="btn btn-outline btn-sm" onclick="App.navigateTo('page-alerts')">All →</button>
+                </div>
+                <div id="homeRecentAlertsContainer">
+                  <!-- Populated dynamically -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. MY LANDS VIEW -->
+        <section id="page-lands" class="page-view">
+          <div class="d-flex justify-between align-center flex-wrap gap-2 mb-4">
+            <div>
+              <h1 class="h2" data-i18n="navLands">My Lands</h1>
+              <p class="text-muted">Register, edit, and configure multiple sloping arecanut plantations</p>
+            </div>
+            <button class="btn btn-primary" onclick="App.openAddLandModal()" data-i18n="addLandBtn">+ Add New Land</button>
+          </div>
+          <div id="myLandsGrid" class="d-flex flex-column gap-3">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+
+        <!-- 3. LAND DASHBOARD VIEW -->
+        <section id="page-land-detail" class="page-view">
+          <div id="landDetailContainer">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+
+        <!-- 4. ZONE MONITORING VIEW -->
+        <section id="page-zones" class="page-view">
+          <div class="d-flex justify-between align-center flex-wrap gap-2 mb-4">
+            <div>
+              <h1 class="h2" data-i18n="navZones">3-Zone Slope Monitoring</h1>
+              <p class="text-muted">Independent moisture, runoff detection, and valve status for Upper, Middle, and Lower slopes</p>
+            </div>
+          </div>
+          <div id="zoneMonitoringCardsContainer" class="zones-grid">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+
+        <!-- 5. IRRIGATION CONTROL VIEW -->
+        <section id="page-irrigation" class="page-view">
+          <div id="irrigationControlContainer">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+
+        <!-- 6. WEATHER VIEW -->
+        <section id="page-weather" class="page-view">
+          <div id="weatherPageContainer">
+            <!-- Populated dynamically with Open-Meteo API -->
+          </div>
+        </section>
+
+        <!-- 7. ANALYTICS VIEW -->
+        <section id="page-analytics" class="page-view">
+          <div class="d-flex justify-between align-center flex-wrap gap-2 mb-4">
+            <div>
+              <h1 class="h2" data-i18n="analyticsTitle">Water Usage & Soil Hydrology Analytics</h1>
+              <p class="text-muted">Multi-zone moisture trends, water savings vs flood irrigation, and event logs</p>
+            </div>
+            <button class="btn btn-primary" onclick="AnalyticsEngine.exportCsv()" data-i18n="exportCsvBtn">Export Records (CSV)</button>
+          </div>
+
+          <!-- Water Savings Callout -->
+          <div class="card p-4 mb-4" style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border-color: #a7f3d0;">
+            <div class="d-flex align-center gap-3">
+              <div>
+                <h3 class="h4 text-success" data-i18n="waterSavingsTitle">Estimated Water Savings: ~38%</h3>
+                <p class="text-sm text-muted" data-i18n="waterSavingsDesc">
+                  Compared to conventional unzoned flood irrigation on sloping plantations, SmartFarm zone management saved approx. 1,420 Litres this week by preventing downhill pooling and runoff wash.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts Grid -->
+          <div class="row mb-4">
+            <div class="col-md-6 mb-3">
+              <div class="card p-4">
+                <h3 class="h5 mb-3" data-i18n="chartMoistureTitle">Soil Moisture Across Slopes (% over time)</h3>
+                <div class="chart-container-card" style="position: relative; height: 300px;">
+                  <canvas id="moistureTrendsChart"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6 mb-3">
+              <div class="card p-4">
+                <h3 class="h5 mb-3" data-i18n="chartWaterUsageTitle">Daily Water Consumption (Litres)</h3>
+                <div class="chart-container-card" style="position: relative; height: 300px;">
+                  <canvas id="waterUsageTrendsChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row mb-4">
+            <div class="col-md-6 mb-3">
+              <div class="card p-4">
+                <h3 class="h5 mb-3" data-i18n="chartZoneComparison">Water Distribution by Slope Zone</h3>
+                <div class="chart-container-card" style="position: relative; height: 280px;">
+                  <canvas id="zoneDistributionChart"></canvas>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6 mb-3">
+              <div class="card p-4">
+                <h3 class="h5 mb-3" data-i18n="chartLandComparison">Water Usage by Land</h3>
+                <div class="chart-container-card" style="position: relative; height: 280px;">
+                  <canvas id="landComparisonChart"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Historical Logs Table -->
+          <div class="card p-4">
+            <h3 class="h5 mb-3">Historical Irrigation Events</h3>
+            <div class="table-responsive">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Event ID</th>
+                    <th>Land</th>
+                    <th>Zone</th>
+                    <th>Start Time</th>
+                    <th>Duration</th>
+                    <th>Water Used</th>
+                    <th>Hardware Status</th>
+                  </tr>
+                </thead>
+                <tbody id="analyticsLogsTableBody">
+                  <!-- Populated dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 8. ALERTS VIEW -->
+        <section id="page-alerts" class="page-view">
+          <div class="d-flex justify-between align-center flex-wrap gap-2 mb-4">
+            <div>
+              <h1 class="h2" data-i18n="alertsTitle">Alerts & Safety History</h1>
+              <p class="text-muted">Real-time alerts, safety halts, runoff events, and sensor status logs</p>
+            </div>
+            <button class="btn btn-outline" onclick="StorageManager.markAllAlertsRead()" data-i18n="markAllRead">Mark all as read</button>
+          </div>
+          <div id="alertsListContainer">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+
+        <!-- 9. RECOMMENDATIONS VIEW -->
+        <section id="page-recommendations" class="page-view">
+          <div class="mb-4">
+            <h1 class="h2" data-i18n="recomTitle">Smart Irrigation Recommendations</h1>
+            <p class="text-muted">Data-driven rules analyzing slope physics, moisture disparity, runoff risks, and rain forecasts</p>
+          </div>
+          <div id="recommendationsPageList">
+            <!-- Populated dynamically -->
+          </div>
+        </section>
+
+        <!-- 10. SETTINGS VIEW -->
+        <section id="page-settings" class="page-view">
+          <div class="mb-4">
+            <h1 class="h2" data-i18n="settingsTitle">System & Hardware Settings</h1>
+            <p class="text-muted">Configure multilingual options, voice alerts, sensor thresholds, and hardware integration</p>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-4">
+              <div class="card p-4">
+                <h3 class="h5 mb-3">Language & Voice Settings</h3>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="langSelectLabel">Interface Language</label>
+                  <select id="settingsLangSelect" class="form-select">
+                    <option value="en">English</option>
+                    <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    <option value="hi">हिंदी (Hindi)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="voiceLanguageSelect" data-i18n="voiceLanguage">Voice Language</label>
+                  <select id="voiceLanguageSelect" class="form-select">
+                    <option value="en">English</option>
+                    <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    <option value="hi">हिंदी (Hindi)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="voiceSettings">Voice Alerts</label>
+                  <div class="d-flex align-center gap-2 mb-2">
+                    <input type="checkbox" id="settingsVoiceToggle" checked onchange="VoiceAlerts.setEnabled(this.checked)">
+                    <label for="settingsVoiceToggle" data-i18n="voiceEnabled">Enable SpeechSynthesis Voice Alerts</label>
+                  </div>
+                  <button class="btn btn-outline btn-sm" onclick="VoiceAlerts.testVoice()" data-i18n="voiceTestBtn">Test Voice Alert</button>
+                  <p id="voiceLanguageStatus" class="voice-language-status" role="status" aria-live="polite"></p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-md-6 mb-4">
+              <div class="card p-4">
+                <h3 class="h5 mb-3">ESP8266 Hardware & REST API</h3>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="hardwareApiEndpoint">Backend Server URL</label>
+                  <input type="text" class="form-control" value="http://localhost:3000/api" readonly>
+                  <span class="text-xs text-muted">Supports ESP8266 HTTP POST telemetry on <code>/api/telemetry</code></span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="simulationSpeed">Simulation Speed</label>
+                  <select class="form-select" onchange="SimulationEngine.setSpeed(parseFloat(this.value))">
+                    <option value="1">1x (Normal 3.5s update)</option>
+                    <option value="2">2x (Faster)</option>
+                    <option value="4">4x (Fast Demonstration)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- MODAL: ADD NEW LAND -->
+  <div id="addLandModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="h4" data-i18n="addLandBtn">+ Add New Land</h3>
+        <button class="btn btn-outline btn-sm" onclick="App.closeAddLandModal()">✕</button>
+      </div>
+      <form onsubmit="App.handleAddLandSubmit(event)">
+        <div class="modal-body">
+          <p class="text-xs text-muted mb-3">Adding a land will automatically provision 3 independent elevation zones: Upper Slope, Middle Slope, and Lower Slope.</p>
+
+          <div class="form-group">
+            <label class="form-label">Land Name *</label>
+            <input type="text" name="landName" class="form-control" placeholder="e.g. Kaveri Valley Arecanut Field" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Location *</label>
+            <input type="text" name="landLocation" class="form-control" placeholder="e.g. Sringeri, Chikkamagaluru" required>
+          </div>
+
+          <div class="row">
+            <div class="col-6 form-group">
+              <label class="form-label">Area *</label>
+              <input type="number" step="0.1" name="landArea" class="form-control" value="2.0" required>
+            </div>
+            <div class="col-6 form-group">
+              <label class="form-label">Area Unit</label>
+              <select name="landAreaUnit" class="form-select">
+                <option value="acres">Acres (ಎಕರೆ / एकड़)</option>
+                <option value="hectares">Hectares (ಹೆಕ್ಟೇರ್ / हेक्टेयर)</option>
+                <option value="guntas">Guntas (ಗುಂಟೆ / गुंठा)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Crop Type</label>
+            <select name="landCropType" class="form-select">
+              <option value="Arecanut (Betel Nut)">Arecanut (ಅಡಿಕೆ / सुपारी)</option>
+              <option value="Arecanut + Pepper">Arecanut + Black Pepper Intercrop</option>
+              <option value="Arecanut + Cocoa">Arecanut + Cocoa Intercrop</option>
+              <option value="Arecanut + Cardamom">Arecanut + Cardamom Intercrop</option>
+            </select>
+          </div>
+
+          <div class="row">
+            <div class="col-6 form-group">
+              <label class="form-label">Latitude (for Weather)</label>
+              <input type="number" step="0.0001" name="landLat" class="form-control" value="13.693">
+            </div>
+            <div class="col-6 form-group">
+              <label class="form-label">Longitude (for Weather)</label>
+              <input type="number" step="0.0001" name="landLon" class="form-control" value="75.244">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">ESP8266 Controller ID</label>
+            <input type="text" name="landControllerId" class="form-control" placeholder="e.g. ESP8266_MALNAD_04">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Description / Slope Notes</label>
+            <textarea name="landDesc" class="form-control" rows="2" placeholder="e.g. Steep terraced slope facing north with natural rocky runoff path."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" onclick="App.closeAddLandModal()" data-i18n="cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-i18n="save">Save & Provision Zones</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT LAND -->
+  <div id="editLandModal" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="h4" data-i18n="editLand">Edit Land</h3>
+        <button class="btn btn-outline btn-sm" onclick="App.closeEditLandModal()">✕</button>
+      </div>
+      <form onsubmit="App.handleEditLandSubmit(event)">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Land Name *</label>
+            <input type="text" id="editLandName" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Location *</label>
+            <input type="text" id="editLandLocation" class="form-control" required>
+          </div>
+          <div class="row">
+            <div class="col-6 form-group">
+              <label class="form-label">Area *</label>
+              <input type="number" step="0.1" id="editLandArea" class="form-control" required>
+            </div>
+            <div class="col-6 form-group">
+              <label class="form-label">Area Unit</label>
+              <select id="editLandAreaUnit" class="form-select">
+                <option value="acres">Acres</option>
+                <option value="hectares">Hectares</option>
+                <option value="guntas">Guntas</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Crop Type</label>
+            <input type="text" id="editLandCropType" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Controller ID</label>
+            <input type="text" id="editLandControllerId" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <textarea id="editLandDesc" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline" onclick="App.closeEditLandModal()" data-i18n="cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-i18n="save">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JavaScript Modules in proper dependency order -->
+  
+<!-- JavaScript Modules -->
+
+<!-- JavaScript Modules -->
+<script src="./js/i18n.js"></script>
+<script src="./js/voice.js"></script>
+<script src="./js/weather.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/api-client.js"></script>
+<script src="./js/simulation.js"></script>
+<script src="./js/charts.js"></script>
+<script src="./js/app.js"></script>
+
+</body>
+</html>
